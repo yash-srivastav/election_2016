@@ -1,5 +1,5 @@
 library(stringr);library(ggplot2); library(tidyr);library(readxl)
-setwd("/Users/yashsrivastav/Dropbox/Personal Projects/County Data/Data")
+setwd("/Users/yashsrivastav/Dropbox/Personal Projects/Election_Analysis/Data")
 #https://www.bls.gov/cew/downloadable-data-files.htm 
 med_inc <- read.csv("2015 Median Income by County.csv")
 voting <- read.csv("countypres_2000-2020.csv")
@@ -7,6 +7,7 @@ education <- read_excel("Education.xls")
 unemp <- read_excel("Unemployment.xlsx")
 ind_emp <- read_excel("emp_industry/allhlcn15.xlsx")
 demographics <- read.csv("cc-est2019-alldata.csv")
+life_expectancy <- read.csv("U.S._Life_Expectancy_at_Birth_by_State_and_Census_Tract_-_2010-2015.csv")
 
 election_2016 <- voting %>%
   filter(year == 2016) %>%
@@ -63,7 +64,20 @@ ind_emp_county <- ind_emp %>%
            .before = cnty) %>%
   relocate(county_name,
            .after = cnty)
-  
+
+life_expectancy <- life_expectancy %>%
+  mutate(state_po = str_extract(County,"(?<=, ).+")) %>%
+  relocate(state_po,
+           .after = County) %>%
+  group_by(County,state_po) %>%
+  summarise(life_expectancy = mean(Life.Expectancy, na.rm = TRUE)) %>%
+  mutate(county_name = str_replace_all(County," County,.+",""),
+         county_name = tolower(county_name),
+         .after = County)
+life_expectancy <- life_expectancy %>%
+  filter(is.na(life_expectancy) == F,
+         is.na(state_po) == F) %>%
+  ungroup()
 
 
 election_2016 <- election_2016 %>% 
@@ -83,6 +97,9 @@ election_2016 <- election_2016 %>%
             by = c("state_po","county_name")) %>%
   left_join(ind_emp_county %>% 
               select(-c(STNAME,cnty)),
+            by = c("state_po","county_name")) %>%
+  left_join(life_expectancy %>%
+              select(-County),
             by = c("state_po","county_name"))
 
 election_2016 <- election_2016 %>%
@@ -125,10 +142,21 @@ election_2016_rep <- election_2016 %>%
 mod <- lm(candidate_share ~ log(med_inc) +
             college + Unemployment_rate_2015 +
             wht + Manufacturing + `Education and health services` +
-            as.factor(state_po),
+            life_expectancy + as.factor(state_po),
           data = election_2016_rep)
 summary(mod)
 
+cor_mat <- cor(election_2016_rep %>%
+                 select(hs_less,hs,some_college,
+                        college,Unemployment_rate_2015,
+                        wht,`Goods-producing`,
+                        `Natural resources and mining`,
+                        Construction,Manufacturing,
+                        `Service-providing`,`Financial activities`,
+                        `Education and health services`,
+                        life_expectancy,candidate_share,
+                        med_inc),
+               use = "complete.obs")
 
 
 
