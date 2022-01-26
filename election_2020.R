@@ -150,7 +150,7 @@ election_2020_rep <- election_2020 %>%
 mod <- lm(candidate_share ~ log(med_inc) +
             college + Unemployment_rate_2020 +
             wht + Manufacturing +
-            `Life Expectancy` + 
+            `Life Expectancy` + case_rate +
             as.factor(state_po),
           data = election_2020_rep)
 summary(mod)
@@ -167,5 +167,29 @@ cor_mat <- cor(election_2020_rep %>%
                         med_inc),
                use = "complete.obs")
 
+## Linear Probability Model
+election_2020_lpm <- election_2020 %>%
+  group_by(county_name,state_po) %>%
+  mutate(outcome = ifelse(candidate_share >
+                            (sum(candidate_share,na.rm = TRUE) - candidate_share),
+                          1,
+                          0))
+election_2020_lpm <- election_2020_lpm %>%
+  filter(partydum == 2)
 
+lpm <- lm(outcome ~ log(med_inc) +
+            college + Unemployment_rate_2020 +
+            wht + Manufacturing +
+            `Life Expectancy` + case_rate +
+            as.factor(state_po),
+          data = election_2020_lpm)
+summary(lpm)
 
+lm <- glm(outcome ~ log(med_inc) +
+            college + Unemployment_rate_2020 +
+            wht + Manufacturing +
+            `Life Expectancy` + case_rate +
+            as.factor(state_po),
+          data = election_2020_lpm,
+          family = "binomial")
+summary(lm)
