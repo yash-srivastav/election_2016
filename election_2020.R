@@ -149,33 +149,14 @@ election_2020 <- election_2020 %>%
          hs = 11,
          some_college = 12,
          college = 13)
+election_2020 <- election_2020 %>%
+  rename(county = CTYNAME,
+         unemp_rate = Unemployment_rate_2020,
+         mfg = Manufacturing,
+         life_exp = Life.Expectancy)
 rm(educ_pct,unemp_20,demographics,ind_emp,
    ind_emp_county,med_inc,education,demographics_19,covid,
    covid_nov)
-
-# election_2020_rep <- election_2020 %>%
-#   filter(partydum == 2)
-# 
-# mod <- lm(candidate_share ~ log(med_inc) +
-#             college + Unemployment_rate_2020 +
-#             wht + Manufacturing +
-#             `Life Expectancy` + case_rate +
-#             as.factor(state_po),
-#           data = election_2020_rep)
-# summary(mod)
-
-#correlation matrix
-cor_mat <- cor(election_2020_rep %>%
-                 select(hs_less,hs,some_college,
-                        college,Unemployment_rate_2020,
-                        wht,`Goods-producing`,
-                        `Natural resources and mining`,
-                        Construction,Manufacturing,
-                        `Service-providing`,`Financial activities`,
-                        `Education and health services`,
-                        `Life Expectancy`,candidate_share,
-                        med_inc),
-               use = "complete.obs")
 
 ## Linear Probability Model
 election_2020_lpm <- election_2020 %>%
@@ -185,34 +166,31 @@ election_2020_lpm <- election_2020 %>%
                           0))
 election_2020_lpm <- election_2020_lpm %>%
   filter(partydum == 2)
-
-election_2020_lpm <- election_2020_lpm %>% 
-   mutate(hs_less = hs_less/100,
-          hs = hs/100,
-          some_college = some_college/100,
-          college = college/100,
-          Unemployment_rate_2020 = Unemployment_rate_2020 / 100)
+#scale all ratio variables by 100
+election_2020_lpm[c(18:19,21:31,36:37)] <- lapply(election_2020_lpm[c(18:19,21:31,36:37)],
+                                                  function(x) x*100)
 lpm_2020 <- lm(outcome ~ log(med_inc) +
-            college + Unemployment_rate_2020 +
-            wht + Manufacturing +
-            `Life Expectancy` + case_rate +
+            college + unemp_rate +
+            wht + mfg +
+            life_exp + case_rate +
+            Education.and.health.services +  
             as.factor(state_po),
           data = election_2020_lpm)
 summary(lpm_2020)
 
 logistic <- glm(outcome ~ log(med_inc) +
-            college + Unemployment_rate_2020 +
-            wht + Manufacturing +
-            `Life Expectancy` + case_rate +
+            college + unemp_rate +
+            wht + mfg +
+            life_exp + case_rate +
             as.factor(state_po),
           data = election_2020_lpm,
           family = "binomial")
 summary(logistic)
 
 logitmfx(outcome ~ log(med_inc) +
-           college + Unemployment_rate_2020 +
-           wht + Manufacturing +
-           `Life Expectancy` + case_rate +
+           college + unemp_rate +
+           wht + mfg +
+           life_exp + case_rate +
            as.factor(state_po),
          data = election_2020_lpm,
          robust = TRUE)
@@ -239,11 +217,22 @@ summary(both_mod)
 # election_2020 <- read.csv("Clean_Data/election_2020.csv")
 # election_2020_lpm <- read.csv("Clean_Data/election_2020_lpm.csv")
 
+## Tables
+library(stargazer)
+stargazer(as.data.frame(election_2020_lpm[,c(11,15:16,19,24,30,32,36:38)]))
+
+
 ## Additional investigation
-x <- setdiff(election_2020_lpm %>% distinct(county_name,state_po),
-             election_2016_lpm %>% distinct(county_name,state_po))
-y <- setdiff(election_2016_lpm %>% distinct(county_name,state_po),
-             election_2020_lpm %>% distinct(county_name,state_po))
-state_percentage <- election_2020_lpm %>%
+stpct20 <- election_2020_lpm %>%
   group_by(state) %>%
   summarise(trump_support = mean(outcome,na.rm = TRUE))
+
+#correlation matrix
+cor_mat20 <- cor(election_2020_lpm %>%
+                 select(college,Unemployment_rate_2020,
+                        wht,med_inc,Goods.producing,
+                        Natural.resources.and.mining,
+                        Construction,Manufacturing,
+                        Education.and.health.services,
+                        Life.Expectancy,candidate_share),
+               use = "complete.obs")

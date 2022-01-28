@@ -1,5 +1,5 @@
 library(stringr);library(ggplot2); library(tidyr);library(readxl)
-setwd("/Users/yashsrivastav/Dropbox/Personal Projects/Election_Analysis/Data")
+setwd("/Users/yashsrivastav/Dropbox/Personal_Projects/Election_Analysis/Data")
 #https://www.bls.gov/cew/downloadable-data-files.htm 
 med_inc <- read.csv("2015 Median Income by County.csv")
 voting <- read.csv("countypres_2000-2020.csv")
@@ -94,7 +94,7 @@ life_expectancy <- life_expectancy %>%
   summarise(life_expectancy = mean(Life.Expectancy, na.rm = TRUE)) %>%
   mutate(county_name = tolower(County),
          county_name = str_replace_all(county_name," county,.+",""),
-         county = str_replace_all(county_name," city,.+",""),
+         county_name = str_replace_all(county_name," city,.+",""),
          .after = County)
 life_expectancy <- life_expectancy %>%
   filter(is.na(life_expectancy) == F,
@@ -125,9 +125,8 @@ election_2016 <- election_2016 %>%
             by = c("state_po","county_name"))
 
 election_2016 <- election_2016 %>%
-  dplyr::select(-c(county_fips,version,mode,Area_name))
-election_2016 <- election_2016 %>%
-  filter(str_detect(`Area name`,"County") == T)
+  dplyr::select(-c(county_fips,version,mode,CTYNAME,county))
+  
 election_2016 <- election_2016 %>%
   mutate(candidate_share = totalcandvotes/totalvotes,
          partydum = case_when(party == "DEMOCRAT" ~ 1,
@@ -142,33 +141,18 @@ election_2016 <- election_2016 %>%
          some_college = 13,
          college = 14)
 
+election_2016 <- election_2016 %>%
+  rename(unemp_rate = Unemployment_rate_2015,
+         life_exp = life_expectancy,
+         county = `Area name`) %>%
+  relocate(candidate_share, .after = totalcandvotes) %>%
+  relocate(county, .after = state_po) %>%
+  relocate(med_inc, .before = hs_less) 
+
+
 rm(educ_pct,unemp_15,demographics_16,ind_emp,
    ind_emp_county,med_inc,education,demographics,
    life_expectancy)
-
-## Linear Regression (not primary model)
-# election_2016_rep <- election_2016 %>%
-#   filter(partydum == 2)
-# ggplot(data = election_2016_rep, aes(x = log(med_inc),
-#                                      y = candidate_share)) +
-#   geom_point()
-# mod <- lm(candidate_share ~ log(med_inc) +
-#             college + Unemployment_rate_2015 +
-#             wht + Manufacturing + `Education and health services` +
-#             life_expectancy + as.factor(state_po),
-#           data = election_2016_rep)
-# summary(mod)
-# cor_mat_16 <- cor(election_2016_rep %>%
-#                  select(hs_less,hs,some_college,
-#                         college,Unemployment_rate_2015,
-#                         wht,`Goods-producing`,
-#                         `Natural resources and mining`,
-#                         Construction,Manufacturing,
-#                         `Service-providing`,`Financial activities`,
-#                         `Education and health services`,
-#                         life_expectancy,candidate_share,
-#                         med_inc),
-#                use = "complete.obs")
 
 ## Linear probability model
 election_2016_lpm <- election_2016 %>%
@@ -179,16 +163,13 @@ election_2016_lpm <- election_2016 %>%
 election_2016_lpm <- election_2016_lpm %>%
   filter(partydum == 2)
 
-election_2016_lpm <- election_2016_lpm %>% #multiply proportions by 100 for easier interpretation of log-odds
-  mutate(hs_less = hs_less/100,
-         hs = hs/100,
-         some_college = some_college/100,
-         college = college/100,
-         Unemployment_rate_2015 = Unemployment_rate_2015 / 100)
+election_2016_lpm[c(17:18,20:30)] <- lapply(election_2016_lpm[c(17:18,20:30)],
+                                                  function(x) x*100)
+
 lpm2016 <- lm(outcome ~ log(med_inc) +
             college + Unemployment_rate_2015 +
             wht + Manufacturing +
-            life_expectancy +
+            life_expectancy + `Education and health services` +
             as.factor(state_po),
           data = election_2016_lpm)
 summary(lpm2016)
@@ -199,5 +180,5 @@ summary(lpm2016)
 
 ## Tables
 library(stargazer)
-stargazer(as.data.frame(election_2016_lpm[,-c(1:7,10,15,17,33)]))
+stargazer(as.data.frame(election_2016_lpm[,c(32,14:15,18,23,29,31,34)]))
 
