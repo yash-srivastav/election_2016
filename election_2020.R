@@ -1,8 +1,9 @@
 library(stringr);library(ggplot2); library(tidyr);library(readxl);library(mfx)
 setwd("/Users/yashsrivastav/Dropbox/Personal_Projects/Election_Analysis/Data")
 #https://www.bls.gov/cew/downloadable-data-files.htm 
-med_inc <- read_excel("Unemployment.xlsx")
+## (1) Import data
 voting <- read.csv("countypres_2000-2020.csv")
+med_inc <- read_excel("Unemployment.xlsx")
 education <- read_excel("Education.xls")
 unemp <- read_excel("Unemployment.xlsx")
 ind_emp <- read_excel("emp_industry_20/allhlcn20.xlsx")
@@ -10,6 +11,7 @@ demographics <- read.csv("cc-est2019-alldata.csv")
 life_expectancy <- read_excel("life_expectancy_2019_2020.xlsx")
 covid <- read.csv("us-counties-covid.csv")
 
+## (2) Clean data before aggregation
 voting <- voting %>%
   group_by(year,state_po,county_fips,candidate) %>%
   mutate(totalcandvotes = sum(candidatevotes,na.rm = TRUE)) %>%
@@ -19,25 +21,27 @@ voting <- voting %>%
   distinct()
 
 election_2020 <- voting %>%
-  filter(year == 2020) %>%
-  mutate(county_name = tolower(county_name),
-         county_name = str_replace_all(county_name,"( city)$",""))
+  filter(year == 2020,
+         is.na(county_fips) == F,
+         ) %>%
+  mutate(county_name = tolower(county_name))
+
 med_inc <- med_inc %>%
   dplyr::select(2,3,91) %>%
   mutate(county_name = tolower(Area_name),
-         county_name = str_replace_all(county_name," county,.+",""),
-         county_name = str_replace_all(county_name," city,.+",""))
+         county_name = str_replace_all(county_name," county,.+",""))
+
 educ_pct <- education %>%
   dplyr::select(State,`Area name`,44:47) %>%
   mutate(county_name = tolower(`Area name`),
-         county_name = str_replace_all(county_name," county",""),
-         county_name = str_replace_all(county_name,"( city)$","")) %>%
+         county_name = str_replace_all(county_name," county","")) %>%
   relocate(county_name, .after = `Area name`)
+
 unemp_20 <- unemp %>%
   dplyr::select(2,3,90) %>%
   mutate(county_name = tolower(Area_name),
-         county_name = str_replace_all(county_name," county,.+",""),
-         county_name = str_replace_all(county_name," city,.+",""))
+         county_name = str_replace_all(county_name," county,.+",""))
+
 demographics_19 <- demographics %>%
   filter(YEAR == 12) %>%
   group_by(CTYNAME,STNAME) %>%
@@ -47,12 +51,12 @@ demographics_19 <- demographics %>%
   mutate(CTYNAME = iconv(CTYNAME,'UTF-8', 'ASCII'),
          county_name = tolower(CTYNAME),
          county_name = str_replace_all(county_name," county",""),
-         county_name = str_replace_all(county_name,"( city)$",""),
          STNAME = toupper(STNAME)) %>%
   relocate(county_name, .after = CTYNAME) %>%
   left_join((voting %>%
                distinct(state,state_po)),
             by = c("STNAME" = "state"))
+
 ind_emp_county <- ind_emp %>%
   rename(county = Area,
          empq = `Employment Location Quotient Relative to U.S.`,
@@ -75,7 +79,6 @@ ind_emp_county <- ind_emp %>%
               values_from = empq) %>%
   mutate(county_name = tolower(county),
          county_name = str_replace_all(county_name," county,.+",""),
-         county_name = str_replace_all(county_name," city,.+",""),
          STNAME = toupper(state_po)) %>%
   dplyr::select(-state_po) %>%
   left_join((voting %>%
@@ -89,7 +92,6 @@ ind_emp_county <- ind_emp %>%
 life_expectancy <- life_expectancy %>%
   dplyr::select(2,3,4) %>%
   mutate(county_name = tolower(County),
-         county_name = str_replace_all(county_name,"( city)$",""),
          .after = County) %>%
   mutate(State = toupper(State)) %>%
   left_join(election_2020 %>% distinct(state,state_po),
@@ -100,12 +102,11 @@ covid_nov <- covid %>%
   filter(date == "2020-11-01")
 covid_nov <- covid_nov %>%
   mutate(state = toupper(state),
-         county_name = str_replace_all(county,"( city)$",""),
-         county_name = tolower(county_name)) %>%
+         county_name = tolower(county)) %>%
   left_join(election_2020 %>% distinct(state,state_po),
             by = "state")
 
-
+## (3) Merge data
 election_2020 <- election_2020 %>% 
   left_join((med_inc %>%
                dplyr::select(State,Median_Household_Income_2019,
@@ -132,6 +133,7 @@ election_2020 <- election_2020 %>%
               dplyr::select(c(cases,deaths,county_name,state_po)),
             by = c("state_po","county_name"))
 
+## (4) Modify county-level election data
 election_2020 <- election_2020 %>%
   dplyr::select(-c(county_fips,version,mode))
 election_2020 <- election_2020 %>%
@@ -152,13 +154,18 @@ election_2020 <- election_2020 %>%
 election_2020 <- election_2020 %>%
   rename(county = CTYNAME,
          unemp_rate = Unemployment_rate_2020,
-         mfg = Manufacturing,
-         life_exp = Life.Expectancy)
+         life_exp = `Life Expectancy`)
+election_2020 <- election_2020 %>%
+  relocate(county, .before = county_name) %>%
+  relocate(c(case_rate,death_rate,med_inc), .before = hs_less) %>%
+  relocate(c(cases,deaths,tot_pop), .before = case_rate) %>%
+  relocate(candidate_share, .after = totalcandvotes)
 rm(educ_pct,unemp_20,demographics,ind_emp,
    ind_emp_county,med_inc,education,demographics_19,covid,
-   covid_nov)
+   covid_nov,life_expectancy,unemp,voting)
 
-## Linear Probability Model
+## (5) Analysis 
+#Linear probability model
 election_2020_lpm <- election_2020 %>%
   group_by(county_name,state_po) %>%
   mutate(outcome = ifelse(candidate_share == max(candidate_share),
@@ -166,18 +173,22 @@ election_2020_lpm <- election_2020 %>%
                           0))
 election_2020_lpm <- election_2020_lpm %>%
   filter(partydum == 2)
-#scale all ratio variables by 100
-election_2020_lpm[c(18:19,21:31,36:37)] <- lapply(election_2020_lpm[c(18:19,21:31,36:37)],
+#scale all ratio variables by 100 for interpretation with LPM
+election_2020_lpm[c(15,16,23:35)] <- lapply(election_2020_lpm[c(15,16,23:35)],
                                                   function(x) x*100)
 lpm_2020 <- lm(outcome ~ log(med_inc) +
             college + unemp_rate +
-            wht + mfg +
+            wht + Manufacturing +
             life_exp + case_rate +
-            Education.and.health.services +  
+            `Education and health services` +  
             as.factor(state_po),
           data = election_2020_lpm)
 summary(lpm_2020)
 
+mfg_reg <- lm(outcome ~ Manufacturing,
+              data = election_2020_lpm)
+summary(mfg_reg)
+#Logistic regression
 logistic <- glm(outcome ~ log(med_inc) +
             college + unemp_rate +
             wht + mfg +
@@ -212,22 +223,41 @@ both_mod <- lm(candidate_share2020 ~ log(med_inc) +
                data = both_elections)
 summary(both_mod)
 
-# write.csv(election_2020,"Clean_Data/election_2020.csv")
-# write.csv(election_2020_lpm,"Clean_Data/election_2020_lpm.csv")
+# write.csv(election_2020,"Clean_Data/election_2020.csv",row.names = FALSE)
+# write.csv(election_2020_lpm,"Clean_Data/election_2020_lpm.csv",row.names = FALSE)
 # election_2020 <- read.csv("Clean_Data/election_2020.csv")
 # election_2020_lpm <- read.csv("Clean_Data/election_2020_lpm.csv")
 
-## Tables
+# Tables
 library(stargazer)
-stargazer(as.data.frame(election_2020_lpm[,c(11,15:16,19,24,30,32,36:38)]))
+# stargazer(as.data.frame(election_2020_lpm[,c(11,15:16,19,24,30,32,36:38)]))
+stargazer(lpm2016,lpm_2020,title = "Model Results",align = TRUE,
+          omit = "state_po")
 
+## (6) Additional investigation
+# Try a model where we include candidate share from previous election as predictor
+# of current election
+election_2020_lpm <- election_2020_lpm %>%
+  left_join(election_2016_lpm %>%
+               distinct(state_po,county_name,candidate_share),
+             by = c("state_po","county_name")) %>%
+  rename(candidate_share2016 = candidate_share.y)
 
-## Additional investigation
+lpm_2020 <- lm(outcome ~ log(med_inc) +
+                 college + unemp_rate +
+                 wht + Manufacturing +
+                 life_exp + case_rate +
+                 `Education and health services` +
+                 as.factor(state_po),
+               data = election_2020_lpm)
+summary(lpm_2020)
+
+# State-level support for Trump
 stpct20 <- election_2020_lpm %>%
   group_by(state) %>%
   summarise(trump_support = mean(outcome,na.rm = TRUE))
 
-#correlation matrix
+# Correlation matrix
 cor_mat20 <- cor(election_2020_lpm %>%
                  select(college,Unemployment_rate_2020,
                         wht,med_inc,Goods.producing,
@@ -236,3 +266,13 @@ cor_mat20 <- cor(election_2020_lpm %>%
                         Education.and.health.services,
                         Life.Expectancy,candidate_share),
                use = "complete.obs")
+
+# Examining county data to look for duplicates or county name changes
+dst <- voting %>% 
+  distinct(county_name,county_fips) %>%
+  group_by(county_fips) %>%
+  filter(n() > 1)
+nrow(dst %>% distinct(county_fips))
+dst1 <- election_2020_lpm %>%
+  group_by(state_po,county_name) %>%
+  filter(n() > 1)
