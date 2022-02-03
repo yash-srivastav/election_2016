@@ -16,21 +16,21 @@ voting <- voting %>%
   group_by(year,state_po,county_fips,candidate) %>%
   mutate(totalcandvotes = sum(candidatevotes,na.rm = TRUE)) %>%
   ungroup() %>%
-  select(-candidatevotes) %>%
+  dplyr::select(-candidatevotes) %>%
   mutate(mode = "TOTAL") %>%
   distinct()
 
 adjcty <- voting %>%
   filter(year == 2020) %>%
   distinct(state_po,county_name, .keep_all = TRUE) %>%
-  select(county_name,county_fips)
+  dplyr::select(county_name,county_fips)
   
 
 election_2016 <- voting %>%
   filter(year == 2016,
          is.na(county_fips) == F) %>%
   left_join(adjcty, by = "county_fips") %>%
-  select(-county_name.x) %>%
+  dplyr::select(-county_name.x) %>%
   rename(county = county_name.y) %>%
   mutate(county_name = tolower(county))
 rm(adjcty)
@@ -60,7 +60,8 @@ demographics_16 <- demographics %>%
   filter(YEAR == 9) %>%
   group_by(CTYNAME,STNAME) %>%
   summarise(blk = (sum(BA_MALE,na.rm = TRUE) + sum(BA_FEMALE,na.rm = TRUE))/sum(TOT_POP,na.rm = TRUE),
-            wht = (sum(WA_MALE,na.rm = TRUE) + sum(WA_FEMALE,na.rm = TRUE))/sum(TOT_POP,na.rm = TRUE)) %>%
+            wht = (sum(WA_MALE,na.rm = TRUE) + sum(WA_FEMALE,na.rm = TRUE))/sum(TOT_POP,na.rm = TRUE),
+            tot_pop = sum(TOT_POP,na.rm = TRUE)) %>%
   mutate(CTYNAME = iconv(CTYNAME,'UTF-8', 'ASCII'),
          county_name = tolower(CTYNAME),
          county_name = str_replace_all(county_name," county",""),
@@ -131,7 +132,7 @@ election_2016 <- election_2016 %>%
             by = c("state_po" = "State",
                    "county_name")) %>%
   left_join((demographics_16 %>%
-               dplyr::select(blk,wht,county_name,state_po)),
+               dplyr::select(blk,wht,tot_pop,county_name,state_po)),
             by = c("state_po","county_name")) %>%
   left_join(ind_emp_county %>% 
               dplyr::select(-c(STNAME)),
@@ -169,7 +170,7 @@ election_2016 <- election_2016 %>%
 
 rm(educ_pct,unemp_15,demographics_16,ind_emp,
    ind_emp_county,med_inc,education,demographics,
-   life_expectancy)
+   life_expectancy,unemp)
 
 ## (5) Creating cross sectional dataset
 election_2016_lpm <- election_2016 %>%
@@ -180,7 +181,7 @@ election_2016_lpm <- election_2016 %>%
 election_2016_lpm <- election_2016_lpm %>%
   filter(partydum == 2)
 
-election_2016_lpm[c(17:29)] <- lapply(election_2016_lpm[c(17:29)],
+election_2016_lpm[c(17:18,20:30)] <- lapply(election_2016_lpm[c(17:18,20:30)],
                                                   function(x) x*100)
 
 # write.csv(election_2016,"Clean_Data/election_2016.csv",row.names = FALSE)
